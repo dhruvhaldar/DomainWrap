@@ -1,13 +1,13 @@
 [project]
 name = "domainwrap"
 version = "0.1.0"
-description = "STL/VTP computational-domain generator with CLI and Gradio UI"
+description = "STL/VTP computational-domain generator with CLI and Web UI"
 readme = "README.md"
 requires-python = ">=3.10"
-dependencies = ["gradio>=5,<7", "pyvista>=0.44,<1", "trimesh>=4,<5", "numpy>=1.26,<3"]
+dependencies = ["pyvista>=0.44,<1", "trimesh>=4,<5", "numpy>=1.26,<3"]
 
 [project.optional-dependencies]
-dev = ["pytest>=8", "ruff>=0.8", "black>=24"]
+dev = ["pytest>=8", "ruff>=0.8", "black>=24", "ty"]
 
 [build-system]
 requires = ["hatchling"]

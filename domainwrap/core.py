@@ -47,20 +47,72 @@ def _watertight(mesh: pv.PolyData) -> bool:
     return bool(solid.is_watertight)
 
 
+def get_geometry_info(source: str | Path | pv.PolyData) -> dict:
+    """Return bounding box, extents, and recommended relative margins."""
+    mesh = source if isinstance(source, pv.PolyData) else load_surface(source)
+    b = tuple(float(v) for v in mesh.bounds)
+    lx = max(0.0, b[1] - b[0])
+    ly = max(0.0, b[3] - b[2])
+    lz = max(0.0, b[5] - b[4])
+    char_len = max(lx, ly, lz)
+    ref_x = lx if lx > 0 else (char_len if char_len > 0 else 1.0)
+    ref_y = ly if ly > 0 else (char_len if char_len > 0 else 1.0)
+    ref_z = lz if lz > 0 else (char_len if char_len > 0 else 1.0)
+    # Relative default margins: -X (1.0x), +X (3.0x wake), -Y (1.0x), +Y (1.0x), -Z (0.2x ground), +Z (1.5x top)
+    default_margins = (
+        round(1.0 * ref_x, 3),
+        round(3.0 * ref_x, 3),
+        round(1.0 * ref_y, 3),
+        round(1.0 * ref_y, 3),
+        round(0.2 * ref_z, 3),
+        round(1.5 * ref_z, 3),
+    )
+    max_val = round(max(ref_x * 5, ref_y * 5, ref_z * 5, 10.0), 2)
+    step = round(char_len / 100.0, 3) if char_len > 0 else 0.1
+    step = max(step, 0.001)
+    return {
+        "bounds": b,
+        "extents": (lx, ly, lz),
+        "default_margins": default_margins,
+        "slider_max": max_val,
+        "slider_step": step,
+    }
+
+
 def generate_domain(
     input_path: str | Path,
     margins: tuple[float, float, float, float, float, float],
     subtract: bool = False,
+    source_scale: float = 1.0,
+    domain_scale: float = 1.0,
 ) -> DomainResult:
     """Margins are ordered -X, +X, -Y, +Y, -Z, +Z."""
+    if source_scale <= 0 or not np.isfinite(source_scale):
+        raise ValueError("Source scale must be a positive finite number")
+    if domain_scale <= 0 or not np.isfinite(domain_scale):
+        raise ValueError("Domain scale must be a positive finite number")
     if len(margins) != 6 or not np.isfinite(margins).all() or any(v < 0 for v in margins):
         raise ValueError("Exactly six finite, nonnegative margins are required")
     source = load_surface(input_path)
+    if source_scale != 1.0:
+        source = source.copy()
+        source.points = source.points * source_scale
+    if domain_scale != 1.0:
+        scaled_margins = (
+            float(margins[0] * domain_scale),
+            float(margins[1] * domain_scale),
+            float(margins[2] * domain_scale),
+            float(margins[3] * domain_scale),
+            float(margins[4] * domain_scale),
+            float(margins[5] * domain_scale),
+        )
+    else:
+        scaled_margins = margins
     b = tuple(float(v) for v in source.bounds)
     bounds = (
-        b[0] - margins[0], b[1] + margins[1],
-        b[2] - margins[2], b[3] + margins[3],
-        b[4] - margins[4], b[5] + margins[5],
+        b[0] - scaled_margins[0], b[1] + scaled_margins[1],
+        b[2] - scaled_margins[2], b[3] + scaled_margins[3],
+        b[4] - scaled_margins[4], b[5] + scaled_margins[5],
     )
     if any(bounds[i] >= bounds[i + 1] for i in (0, 2, 4)):
         raise ValueError("Domain must have positive extent on every axis")
