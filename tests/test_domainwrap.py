@@ -28,6 +28,17 @@ def test_box_and_formats(source, tmp_path):
         assert pv.read(path).n_faces == 12
 
 
+def test_stl_ascii_and_binary(source, tmp_path):
+    result = generate_domain(source, (1, 1, 1, 1, 1, 1))
+    bin_path = save_domain(result.mesh, tmp_path / "domain_bin.stl", binary=True)
+    asc_path = save_domain(result.mesh, tmp_path / "domain_asc.stl", binary=False)
+
+    assert bin_path.read_bytes()[:5] != b"solid"
+    assert asc_path.read_bytes().startswith(b"solid")
+    assert pv.read(bin_path).n_faces == 12
+    assert pv.read(asc_path).n_faces == 12
+
+
 def test_subtraction(source):
     result = generate_domain(source, (1, 1, 1, 1, 1, 1), subtract=True)
     assert result.mesh.n_faces > 12
@@ -94,6 +105,19 @@ def test_cli_scaling(source, tmp_path):
     assert data["domain_bounds"] == pytest.approx((-3.0, 3.0, -3.0, 3.0, -3.0, 3.0))
 
 
+def test_cli_ascii(source, tmp_path):
+    output = tmp_path / "cli_ascii.stl"
+    result = subprocess.run(
+        [sys.executable, "-m", "domainwrap.cli", "--input", str(source),
+         "--output", str(output), "--margins", "1", "1", "1", "1", "1", "1",
+         "--ascii"],
+        capture_output=True, text=True, check=False,
+    )
+    assert result.returncode == 0, result.stderr
+    assert output.is_file()
+    assert output.read_bytes().startswith(b"solid")
+
+
 def test_web_app_builds():
     app = create_app(port=0)
     assert isinstance(app, DomainWrapServer)
@@ -121,6 +145,12 @@ def test_server_api_flow(source):
             assert resp.status == HTTPStatus.OK
             html = resp.read().decode("utf-8")
             assert "DomainWrap" in html
+            assert 'rel="icon"' in html
+
+        with urllib.request.urlopen(f"{base_url}/favicon.ico") as resp:
+            assert resp.status == HTTPStatus.OK
+            assert "image/svg+xml" in resp.headers.get("Content-Type", "")
+            assert b"<svg" in resp.read()
 
         # 2. POST /api/upload
         source_bytes = source.read_bytes()
@@ -145,6 +175,7 @@ def test_server_api_flow(source):
             "margins": [1, 2, 3, 4, 5, 6],
             "subtract": False,
             "format": "stl",
+            "binary": False,
             "source_scale": 1.0,
             "domain_scale": 1.0,
         }).encode("utf-8")
@@ -160,11 +191,11 @@ def test_server_api_flow(source):
             assert "download_url" in gen_data
             assert "domain_bounds" in gen_data
 
-        # 4. GET download_url
+        # 4. GET download_url (verifying ASCII STL format)
         with urllib.request.urlopen(f"{base_url}{gen_data['download_url']}") as resp:
             assert resp.status == HTTPStatus.OK
             downloaded = resp.read()
-            assert len(downloaded) > 0
+            assert downloaded.startswith(b"solid")
     finally:
         server.shutdown()
         server.server_close()

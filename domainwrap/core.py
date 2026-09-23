@@ -67,13 +67,14 @@ def get_geometry_info(source: str | Path | pv.PolyData) -> dict:
         round(0.2 * ref_z, 3),
         round(1.5 * ref_z, 3),
     )
-    max_val = round(max(ref_x * 5, ref_y * 5, ref_z * 5, 10.0), 2)
+    max_val = round(max(ref_x * 12, ref_y * 8, ref_z * 8, 10.0), 2)
     step = round(char_len / 100.0, 3) if char_len > 0 else 0.1
     step = max(step, 0.001)
     return {
         "bounds": b,
         "extents": (lx, ly, lz),
         "default_margins": default_margins,
+        "default_multipliers": (1.0, 3.0, 1.0, 1.0, 0.2, 1.5),
         "slider_max": max_val,
         "slider_step": step,
     }
@@ -142,10 +143,11 @@ def generate_domain(
     return DomainResult(box, b, bounds, notes)
 
 
-def save_domain(mesh: pv.PolyData, output_path: str | Path) -> Path:
+def save_domain(mesh: pv.PolyData, output_path: str | Path, binary: bool = True) -> Path:
     output = Path(output_path)
     if output.suffix.lower() not in SUPPORTED:
         raise ValueError("Output must end in .stl or .vtp")
     output.parent.mkdir(parents=True, exist_ok=True)
-    mesh.save(output, binary=output.suffix.lower() == ".stl")
+    is_binary = binary if output.suffix.lower() == ".stl" else True
+    mesh.save(output, binary=is_binary)
     return output

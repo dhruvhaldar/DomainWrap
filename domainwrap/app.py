@@ -11,12 +11,23 @@ from urllib.parse import unquote
 
 from .core import generate_domain, get_geometry_info, load_surface, save_domain
 
+FAVICON_SVG = """<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32">
+  <rect width="32" height="32" rx="8" fill="#090d16"/>
+  <path d="M16 4 L28 10 L28 22 L16 28 L4 22 L4 10 Z" fill="rgba(6,182,212,0.15)" stroke="#06b6d4" stroke-width="1.8" stroke-linejoin="round"/>
+  <path d="M16 4 L16 16 L28 10 M16 16 L4 10 M16 16 L16 28" fill="none" stroke="#06b6d4" stroke-width="1.2" stroke-opacity="0.6"/>
+  <path d="M16 11 L22 14 L22 20 L16 23 L10 20 L10 14 Z" fill="#3b82f6" stroke="#60a5fa" stroke-width="1.2" stroke-linejoin="round"/>
+  <path d="M16 11 L16 17 L22 14 M16 17 L10 14 M16 17 L16 23" fill="none" stroke="#93c5fd" stroke-width="1"/>
+</svg>
+"""
+
 HTML_PAGE = """<!DOCTYPE html>
 <html lang="en">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>DomainWrap</title>
+    <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='8' fill='%23090d16'/%3E%3Cpath d='M16 4 L28 10 L28 22 L16 28 L4 22 L4 10 Z' fill='rgba(6,182,212,0.15)' stroke='%2306b6d4' stroke-width='1.8' stroke-linejoin='round'/%3E%3Cpath d='M16 4 L16 16 L28 10 M16 16 L4 10 M16 16 L16 28' fill='none' stroke='%2306b6d4' stroke-width='1.2' stroke-opacity='0.6'/%3E%3Cpath d='M16 11 L22 14 L22 20 L16 23 L10 20 L10 14 Z' fill='%233b82f6' stroke='%2360a5fa' stroke-width='1.2' stroke-linejoin='round'/%3E%3Cpath d='M16 11 L16 17 L22 14 M16 17 L10 14 M16 17 L16 23' fill='none' stroke='%2393c5fd' stroke-width='1'/%3E%3C/svg%3E">
+    <link rel="alternate icon" href="/favicon.ico">
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
@@ -41,6 +52,7 @@ HTML_PAGE = """<!DOCTYPE html>
             --radius-sm: 6px;
             --radius-md: 10px;
             --radius-lg: 14px;
+            --sidebar-width: 460px;
         }
 
         * {
@@ -87,27 +99,204 @@ HTML_PAGE = """<!DOCTYPE html>
         }
 
         .app-layout {
-            display: grid;
-            grid-template-columns: 440px 1fr;
+            position: relative;
             flex: 1;
             height: calc(100vh - 65px);
+            overflow: hidden;
+        }
+
+        .controls-panel {
+            position: absolute;
+            top: 16px;
+            left: 16px;
+            bottom: 16px;
+            width: var(--sidebar-width, 460px);
+            min-width: 320px;
+            max-width: min(760px, calc(100vw - 60px));
+            background: rgba(15, 23, 42, 0.88);
+            backdrop-filter: blur(20px);
+            -webkit-backdrop-filter: blur(20px);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            border-radius: var(--radius-lg);
+            box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.75), 0 0 0 1px rgba(255, 255, 255, 0.05);
+            padding: 18px 20px;
+            overflow-y: auto;
+            display: flex;
+            flex-direction: column;
+            gap: 16px;
+            z-index: 20;
+            transition: transform 0.28s cubic-bezier(0.16, 1, 0.3, 1), opacity 0.28s ease;
+        }
+
+        .controls-panel.collapsed {
+            transform: translateX(calc(-100% - 30px));
+            opacity: 0;
+            pointer-events: none;
+        }
+
+        .controls-panel::-webkit-scrollbar {
+            width: 6px;
+        }
+
+        .controls-panel::-webkit-scrollbar-track {
+            background: transparent;
+        }
+
+        .controls-panel::-webkit-scrollbar-thumb {
+            background: rgba(255, 255, 255, 0.15);
+            border-radius: 3px;
+        }
+
+        .controls-panel::-webkit-scrollbar-thumb:hover {
+            background: rgba(255, 255, 255, 0.3);
+        }
+
+        .panel-resizer {
+            position: absolute;
+            top: 0;
+            right: -6px;
+            width: 12px;
+            height: 100%;
+            cursor: col-resize;
+            z-index: 30;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            user-select: none;
+            touch-action: none;
+        }
+
+        .resizer-knurling {
+            width: 4px;
+            height: 42px;
+            border-radius: 2px;
+            background-color: var(--border-color);
+            transition: all 0.2s ease;
+        }
+
+        .panel-resizer:hover .resizer-knurling,
+        body.resizing .resizer-knurling {
+            background-color: var(--accent-cyan);
+            box-shadow: 0 0 10px var(--accent-cyan);
+            height: 60px;
+        }
+
+        body.resizing {
+            cursor: col-resize !important;
+            user-select: none !important;
+        }
+
+        .panel-top-bar {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding-bottom: 8px;
+            border-bottom: 1px solid var(--border-color);
+        }
+
+        .panel-brand {
+            display: flex;
+            align-items: baseline;
+            gap: 8px;
+        }
+
+        .panel-top-title {
+            font-size: 14px;
+            font-weight: 700;
+            letter-spacing: -0.01em;
+            color: var(--text-main);
+        }
+
+        .panel-top-sub {
+            font-size: 11px;
+            color: var(--text-subtle);
+        }
+
+        .icon-btn {
+            background: rgba(255, 255, 255, 0.04);
+            border: 1px solid var(--border-color);
+            color: var(--text-muted);
+            border-radius: var(--radius-sm);
+            width: 28px;
+            height: 28px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            cursor: pointer;
+            transition: all 0.15s ease;
+            font-size: 13px;
+            line-height: 1;
+        }
+
+        .icon-btn:hover {
+            border-color: var(--accent-cyan);
+            color: var(--accent-cyan);
+            background-color: rgba(6, 182, 212, 0.1);
+        }
+
+        .btn-floating-controls {
+            position: absolute;
+            top: 16px;
+            left: 16px;
+            z-index: 25;
+            background: rgba(15, 23, 42, 0.88);
+            backdrop-filter: blur(14px);
+            -webkit-backdrop-filter: blur(14px);
+            border: 1px solid var(--border-color);
+            color: var(--text-main);
+            padding: 8px 14px;
+            border-radius: var(--radius-md);
+            font-size: 13px;
+            font-weight: 600;
+            cursor: pointer;
+            display: none;
+            box-shadow: 0 10px 25px rgba(0, 0, 0, 0.5);
+            transition: all 0.15s ease;
+        }
+
+        .controls-panel.collapsed ~ .viewport-container .btn-floating-controls,
+        .btn-floating-controls.visible {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .btn-floating-controls:hover {
+            border-color: var(--accent-cyan);
+            color: var(--accent-cyan);
+            background: rgba(15, 23, 42, 0.95);
         }
 
         @media (max-width: 960px) {
             .app-layout {
-                grid-template-columns: 1fr;
                 height: auto;
+                display: flex;
+                flex-direction: column;
             }
-        }
-
-        .controls-panel {
-            background-color: var(--bg-card);
-            border-right: 1px solid var(--border-color);
-            padding: 24px;
-            overflow-y: auto;
-            display: flex;
-            flex-direction: column;
-            gap: 20px;
+            .viewport-container {
+                position: relative;
+                height: 500px;
+                order: 2;
+            }
+            .controls-panel {
+                position: relative;
+                top: 0;
+                left: 0;
+                bottom: 0;
+                width: 100% !important;
+                max-width: 100%;
+                border-radius: 0;
+                order: 1;
+            }
+            .panel-resizer {
+                display: none;
+            }
+            .btn-floating-controls {
+                display: none !important;
+            }
+            .icon-btn {
+                display: none;
+            }
         }
 
         .card {
@@ -258,6 +447,132 @@ HTML_PAGE = """<!DOCTYPE html>
             color: var(--text-main);
         }
 
+        .presets-row {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 6px;
+        }
+
+        .cfd-preset-btn {
+            background-color: var(--bg-main);
+            border: 1px solid var(--border-color);
+            color: var(--text-muted);
+            font-size: 11px;
+            font-weight: 500;
+            padding: 5px 8px;
+            border-radius: var(--radius-sm);
+            cursor: pointer;
+            transition: all 0.15s ease;
+        }
+
+        .cfd-preset-btn:hover {
+            border-color: var(--border-highlight);
+            color: var(--text-main);
+        }
+
+        .cfd-preset-btn.active {
+            background-color: var(--primary);
+            border-color: var(--primary);
+            color: #ffffff;
+        }
+
+        .mult-chips {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 4px;
+            margin-top: 4px;
+        }
+
+        .mult-chip {
+            background-color: var(--bg-main);
+            border: 1px solid var(--border-color);
+            color: var(--text-muted);
+            font-size: 10px;
+            font-family: 'JetBrains Mono', monospace;
+            padding: 2px 6px;
+            border-radius: 4px;
+            cursor: pointer;
+            transition: all 0.15s ease;
+        }
+
+        .mult-chip:hover {
+            border-color: var(--accent-cyan);
+            color: var(--accent-cyan);
+        }
+
+        .mult-input-group {
+            display: flex;
+            align-items: center;
+            gap: 4px;
+            font-size: 11px;
+            color: var(--text-subtle);
+            flex-shrink: 0;
+            white-space: nowrap;
+        }
+
+        .mult-input {
+            width: 52px;
+            height: 22px;
+            background-color: var(--bg-main);
+            border: 1px solid var(--border-color);
+            color: var(--accent-cyan);
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 11.5px;
+            font-weight: 600;
+            padding: 0 4px;
+            border-radius: 4px;
+            text-align: center;
+            outline: none;
+            -moz-appearance: textfield;
+            appearance: textfield;
+            box-sizing: border-box;
+            transition: border-color 0.15s ease, background-color 0.15s ease;
+        }
+
+        .mult-input::-webkit-outer-spin-button,
+        .mult-input::-webkit-inner-spin-button {
+            -webkit-appearance: none;
+            margin: 0;
+        }
+
+        .mult-input:focus {
+            border-color: var(--border-highlight);
+            background-color: var(--bg-card);
+        }
+
+        .metrics-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 8px;
+            font-size: 12px;
+        }
+
+        .metric-badge {
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 11px;
+            padding: 2px 6px;
+            border-radius: 4px;
+            display: inline-block;
+        }
+
+        .metric-badge.good {
+            background-color: rgba(16, 185, 129, 0.15);
+            color: var(--accent-green);
+            border: 1px solid rgba(16, 185, 129, 0.3);
+        }
+
+        .metric-badge.warn {
+            background-color: rgba(245, 158, 11, 0.15);
+            color: #f59e0b;
+            border: 1px solid rgba(245, 158, 11, 0.3);
+        }
+
+        .metric-badge.alert {
+            background-color: rgba(239, 68, 68, 0.15);
+            color: var(--accent-red);
+            border: 1px solid rgba(239, 68, 68, 0.3);
+        }
+
         .slider-grid {
             display: grid;
             grid-template-columns: 1fr 1fr;
@@ -272,13 +587,17 @@ HTML_PAGE = """<!DOCTYPE html>
 
         .slider-header {
             display: flex;
+            align-items: center;
             justify-content: space-between;
             font-size: 12px;
             font-weight: 500;
+            gap: 4px;
         }
 
         .slider-label {
             color: var(--text-main);
+            font-size: 11.5px;
+            white-space: nowrap;
         }
 
         .slider-val {
@@ -301,6 +620,16 @@ HTML_PAGE = """<!DOCTYPE html>
             align-items: center;
             justify-content: space-between;
             font-size: 13px;
+        }
+
+        .stl-mode-row {
+            display: none;
+            padding-top: 6px;
+            border-top: 1px dashed var(--border-color);
+        }
+
+        .stl-mode-row.visible {
+            display: flex;
         }
 
         .checkbox-label {
@@ -395,11 +724,14 @@ HTML_PAGE = """<!DOCTYPE html>
         }
 
         .viewport-container {
-            position: relative;
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
             background-color: var(--bg-main);
-            display: flex;
-            flex-direction: column;
             overflow: hidden;
+            z-index: 1;
         }
 
         #canvas3d {
@@ -414,11 +746,13 @@ HTML_PAGE = """<!DOCTYPE html>
             right: 16px;
             display: flex;
             gap: 8px;
-            z-index: 10;
+            z-index: 15;
         }
 
         .tool-btn {
-            background-color: rgba(19, 27, 46, 0.85);
+            background-color: rgba(15, 23, 42, 0.85);
+            backdrop-filter: blur(10px);
+            -webkit-backdrop-filter: blur(10px);
             border: 1px solid var(--border-color);
             color: var(--text-main);
             font-size: 12px;
@@ -426,7 +760,6 @@ HTML_PAGE = """<!DOCTYPE html>
             padding: 6px 12px;
             border-radius: var(--radius-sm);
             cursor: pointer;
-            backdrop-filter: blur(8px);
             transition: all 0.15s ease;
         }
 
@@ -438,16 +771,18 @@ HTML_PAGE = """<!DOCTYPE html>
         .viewport-legend {
             position: absolute;
             bottom: 16px;
-            left: 16px;
-            background-color: rgba(19, 27, 46, 0.85);
+            right: 16px;
+            background-color: rgba(15, 23, 42, 0.85);
+            backdrop-filter: blur(12px);
+            -webkit-backdrop-filter: blur(12px);
             border: 1px solid var(--border-color);
-            border-radius: var(--radius-sm);
-            padding: 8px 12px;
+            border-radius: var(--radius-md);
+            padding: 8px 14px;
             font-size: 11px;
-            backdrop-filter: blur(8px);
             display: flex;
             gap: 14px;
-            z-index: 10;
+            z-index: 15;
+            pointer-events: none;
         }
 
         .legend-item {
@@ -502,6 +837,13 @@ HTML_PAGE = """<!DOCTYPE html>
 
     <div class="app-layout">
         <aside class="controls-panel">
+            <div class="panel-top-bar">
+                <div class="panel-brand">
+                    <span class="panel-top-title">Domain Controls</span>
+                    <span class="panel-top-sub">CFD Parameters</span>
+                </div>
+                <button type="button" id="btn-collapse-sidebar" class="icon-btn" title="Collapse Sidebar (Full 3D View)">✕</button>
+            </div>
             <div class="card">
                 <div class="card-title">
                     <span>Source Surface</span>
@@ -552,51 +894,133 @@ HTML_PAGE = """<!DOCTYPE html>
 
             <div class="card">
                 <div class="card-title">
-                    <span>Boundary Offsets</span>
-                    <span id="bounds-mode-indicator" class="subtitle">Relative to geometry</span>
+                    <span>CFD Domain Presets</span>
+                </div>
+                <div class="presets-row">
+                    <button type="button" class="cfd-preset-btn active" data-preset-name="standard">Standard (3× Wake)</button>
+                    <button type="button" class="cfd-preset-btn" data-preset-name="automotive">Automotive (5× Wake)</button>
+                    <button type="button" class="cfd-preset-btn" data-preset-name="aero">Aerospace (6× Wake)</button>
+                    <button type="button" class="cfd-preset-btn" data-preset-name="longwake">Long Wake (8×)</button>
+                </div>
+            </div>
+
+            <div class="card">
+                <div class="card-title">
+                    <span>Boundary Offsets & Multipliers</span>
+                    <label class="checkbox-label">
+                        <input type="checkbox" id="check-symmetric-y" checked>
+                        <span class="subtitle">Symmetric ±Y</span>
+                    </label>
                 </div>
                 <div class="slider-grid">
                     <div class="slider-control">
                         <div class="slider-header">
                             <span class="slider-label">−X (Inlet)</span>
-                            <span id="val-mx" class="slider-val">500</span>
+                            <div class="mult-input-group">
+                                <input type="number" id="mult-mx" class="mult-input" value="1.0" step="0.1" min="0">
+                                <span>×Lx</span>
+                            </div>
                         </div>
                         <input type="range" id="slider-mx" class="range-slider" min="0" max="10000" step="1" value="500">
+                        <div class="mult-chips">
+                            <button type="button" class="mult-chip" data-axis="mx" data-val="1">1×</button>
+                            <button type="button" class="mult-chip" data-axis="mx" data-val="2">2×</button>
+                            <button type="button" class="mult-chip" data-axis="mx" data-val="3">3×</button>
+                        </div>
                     </div>
                     <div class="slider-control">
                         <div class="slider-header">
                             <span class="slider-label">+X (Wake)</span>
-                            <span id="val-px" class="slider-val">2000</span>
+                            <div class="mult-input-group">
+                                <input type="number" id="mult-px" class="mult-input" value="3.0" step="0.5" min="0">
+                                <span>×Lx</span>
+                            </div>
                         </div>
                         <input type="range" id="slider-px" class="range-slider" min="0" max="10000" step="1" value="2000">
+                        <div class="mult-chips">
+                            <button type="button" class="mult-chip active" data-axis="px" data-val="3">3×</button>
+                            <button type="button" class="mult-chip" data-axis="px" data-val="5">5×</button>
+                            <button type="button" class="mult-chip" data-axis="px" data-val="8">8×</button>
+                            <button type="button" class="mult-chip" data-axis="px" data-val="10">10×</button>
+                        </div>
                     </div>
                     <div class="slider-control">
                         <div class="slider-header">
-                            <span class="slider-label">−Y</span>
-                            <span id="val-my" class="slider-val">500</span>
+                            <span class="slider-label">−Y (Side)</span>
+                            <div class="mult-input-group">
+                                <input type="number" id="mult-my" class="mult-input" value="1.0" step="0.2" min="0">
+                                <span>×Ly</span>
+                            </div>
                         </div>
                         <input type="range" id="slider-my" class="range-slider" min="0" max="10000" step="1" value="500">
+                        <div class="mult-chips">
+                            <button type="button" class="mult-chip" data-axis="my" data-val="1">1×</button>
+                            <button type="button" class="mult-chip" data-axis="my" data-val="2">2×</button>
+                            <button type="button" class="mult-chip" data-axis="my" data-val="3">3×</button>
+                        </div>
                     </div>
                     <div class="slider-control">
                         <div class="slider-header">
-                            <span class="slider-label">+Y</span>
-                            <span id="val-py" class="slider-val">500</span>
+                            <span class="slider-label">+Y (Side)</span>
+                            <div class="mult-input-group">
+                                <input type="number" id="mult-py" class="mult-input" value="1.0" step="0.2" min="0">
+                                <span>×Ly</span>
+                            </div>
                         </div>
                         <input type="range" id="slider-py" class="range-slider" min="0" max="10000" step="1" value="500">
+                        <div class="mult-chips">
+                            <button type="button" class="mult-chip" data-axis="py" data-val="1">1×</button>
+                            <button type="button" class="mult-chip" data-axis="py" data-val="2">2×</button>
+                            <button type="button" class="mult-chip" data-axis="py" data-val="3">3×</button>
+                        </div>
                     </div>
                     <div class="slider-control">
                         <div class="slider-header">
                             <span class="slider-label">−Z (Ground)</span>
-                            <span id="val-mz" class="slider-val">50</span>
+                            <div class="mult-input-group">
+                                <input type="number" id="mult-mz" class="mult-input" value="0.2" step="0.05" min="0">
+                                <span>×Lz</span>
+                            </div>
                         </div>
                         <input type="range" id="slider-mz" class="range-slider" min="0" max="10000" step="1" value="50">
+                        <div class="mult-chips">
+                            <button type="button" class="mult-chip" data-axis="mz" data-val="0">0×</button>
+                            <button type="button" class="mult-chip" data-axis="mz" data-val="0.2">0.2×</button>
+                            <button type="button" class="mult-chip" data-axis="mz" data-val="1">1×</button>
+                        </div>
                     </div>
                     <div class="slider-control">
                         <div class="slider-header">
                             <span class="slider-label">+Z (Top)</span>
-                            <span id="val-pz" class="slider-val">800</span>
+                            <div class="mult-input-group">
+                                <input type="number" id="mult-pz" class="mult-input" value="1.5" step="0.2" min="0">
+                                <span>×Lz</span>
+                            </div>
                         </div>
                         <input type="range" id="slider-pz" class="range-slider" min="0" max="10000" step="1" value="800">
+                        <div class="mult-chips">
+                            <button type="button" class="mult-chip" data-axis="pz" data-val="1.5">1.5×</button>
+                            <button type="button" class="mult-chip" data-axis="pz" data-val="3">3×</button>
+                            <button type="button" class="mult-chip" data-axis="pz" data-val="5">5×</button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="card">
+                <div class="card-title">
+                    <span>CFD Domain Diagnostics</span>
+                </div>
+                <div class="metrics-grid">
+                    <div class="stat-item">
+                        <div class="stat-label">Domain Size (Lx, Ly, Lz)</div>
+                        <div id="stat-domain-size" class="stat-value">-</div>
+                    </div>
+                    <div class="stat-item">
+                        <div class="stat-label">Frontal Blockage</div>
+                        <div class="stat-value">
+                            <span id="stat-blockage" class="metric-badge good">-</span>
+                        </div>
                     </div>
                 </div>
             </div>
@@ -621,6 +1045,19 @@ HTML_PAGE = """<!DOCTYPE html>
                         </label>
                     </div>
                 </div>
+                <div id="stl-encoding-row" class="options-row stl-mode-row">
+                    <span class="subtitle">STL Format:</span>
+                    <div class="format-select">
+                        <label class="format-radio">
+                            <input type="radio" name="stl-encoding" value="binary" checked>
+                            <span>Binary</span>
+                        </label>
+                        <label class="format-radio">
+                            <input type="radio" name="stl-encoding" value="ascii">
+                            <span>ASCII</span>
+                        </label>
+                    </div>
+                </div>
                 <button type="button" id="btn-generate" class="btn-primary" disabled>
                     <span>Generate Domain</span>
                 </button>
@@ -633,9 +1070,16 @@ HTML_PAGE = """<!DOCTYPE html>
                 </div>
                 <div id="report-output" class="report-box">Ready. Upload an STL or VTP file to begin.</div>
             </div>
+            <div id="panel-resizer" class="panel-resizer" title="Drag to resize sidebar">
+                <div class="resizer-knurling"></div>
+            </div>
         </aside>
 
         <main class="viewport-container">
+            <button type="button" id="btn-show-sidebar" class="btn-floating-controls" title="Open Controls">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="3" y1="12" x2="21" y2="12"></line><line x1="3" y1="6" x2="21" y2="6"></line><line x1="3" y1="18" x2="21" y2="18"></line></svg>
+                <span>Controls</span>
+            </button>
             <div class="viewport-toolbar">
                 <button type="button" id="btn-reset-cam" class="tool-btn">Reset View</button>
                 <button type="button" id="btn-toggle-wire" class="tool-btn">Edges Only</button>
@@ -661,17 +1105,21 @@ HTML_PAGE = """<!DOCTYPE html>
                 return;
             }
 
-            // State management
+            // State management (with default aerodynamic sample shape on start)
             var state = {
                 fileId: null,
-                sourceBounds: null,
-                extents: null,
+                sourceBounds: [-0.5, 0.5, -0.2, 0.2, 0.0, 0.3],
+                extents: [1.0, 0.4, 0.3],
                 scaleTarget: 'both',
                 scaleFactor: 1.0,
                 wireframeOnly: false
             };
 
             // DOM elements
+            var controlsPanel = document.querySelector('.controls-panel');
+            var panelResizer = document.getElementById('panel-resizer');
+            var btnCollapseSidebar = document.getElementById('btn-collapse-sidebar');
+            var btnShowSidebar = document.getElementById('btn-show-sidebar');
             var dropZone = document.getElementById('drop-zone');
             var fileInput = document.getElementById('file-input');
             var uploadPrompt = document.getElementById('upload-prompt-text');
@@ -689,13 +1137,20 @@ HTML_PAGE = """<!DOCTYPE html>
             var sliderPY = document.getElementById('slider-py');
             var sliderMZ = document.getElementById('slider-mz');
             var sliderPZ = document.getElementById('slider-pz');
-            var valMX = document.getElementById('val-mx');
-            var valPX = document.getElementById('val-px');
-            var valMY = document.getElementById('val-my');
-            var valPY = document.getElementById('val-py');
-            var valMZ = document.getElementById('val-mz');
-            var valPZ = document.getElementById('val-pz');
+            var multMX = document.getElementById('mult-mx');
+            var multPX = document.getElementById('mult-px');
+            var multMY = document.getElementById('mult-my');
+            var multPY = document.getElementById('mult-py');
+            var multMZ = document.getElementById('mult-mz');
+            var multPZ = document.getElementById('mult-pz');
+            var checkSymmetricY = document.getElementById('check-symmetric-y');
+            var statDomainSize = document.getElementById('stat-domain-size');
+            var statBlockage = document.getElementById('stat-blockage');
+            var cfdPresetBtns = document.querySelectorAll('.cfd-preset-btn');
+            var multChips = document.querySelectorAll('.mult-chip');
             var checkSubtract = document.getElementById('check-subtract');
+            var stlEncodingRow = document.getElementById('stl-encoding-row');
+            var fmtRadios = document.querySelectorAll('input[name="fmt"]');
             var btnGenerate = document.getElementById('btn-generate');
             var btnDownload = document.getElementById('btn-download');
             var reportOutput = document.getElementById('report-output');
@@ -713,10 +1168,30 @@ HTML_PAGE = """<!DOCTYPE html>
             var defaultCameraPosition = new THREE.Vector3(100, 100, 100);
             var defaultCameraTarget = new THREE.Vector3(0, 0, 0);
 
+            function initSampleSliders() {
+                var sliderDefs = [
+                    { el: sliderMX, val: 1.0, max: 12.0, step: 0.05 },
+                    { el: sliderPX, val: 3.0, max: 12.0, step: 0.05 },
+                    { el: sliderMY, val: 0.4, max: 5.0, step: 0.02 },
+                    { el: sliderPY, val: 0.4, max: 5.0, step: 0.02 },
+                    { el: sliderMZ, val: 0.06, max: 3.0, step: 0.01 },
+                    { el: sliderPZ, val: 0.45, max: 5.0, step: 0.02 }
+                ];
+                for (var i = 0; i < sliderDefs.length; i++) {
+                    var s = sliderDefs[i];
+                    if (s.el !== null && s.el !== undefined) {
+                        s.el.min = 0;
+                        s.el.max = s.max;
+                        s.el.step = s.step;
+                        s.el.value = s.val;
+                    }
+                }
+            }
+
             function init3D() {
                 if (canvasContainer === null || canvasContainer === undefined) return;
-                var width = canvasContainer.clientWidth || 800;
-                var height = canvasContainer.clientHeight || 600;
+                var width = canvasContainer.clientWidth || window.innerWidth || 800;
+                var height = canvasContainer.clientHeight || (window.innerHeight - 65) || 600;
 
                 scene = new THREE.Scene();
                 scene.background = new THREE.Color(0x090d16);
@@ -734,10 +1209,10 @@ HTML_PAGE = """<!DOCTYPE html>
                 controls.dampingFactor = 0.08;
 
                 // Lighting
-                var ambientLight = new THREE.AmbientLight(0xffffff, 0.65);
+                var ambientLight = new THREE.AmbientLight(0xffffff, 0.7);
                 scene.add(ambientLight);
 
-                var dirLight1 = new THREE.DirectionalLight(0xffffff, 0.7);
+                var dirLight1 = new THREE.DirectionalLight(0xffffff, 0.75);
                 dirLight1.position.set(1, 2, 3).normalize();
                 scene.add(dirLight1);
 
@@ -746,8 +1221,23 @@ HTML_PAGE = """<!DOCTYPE html>
                 scene.add(dirLight2);
 
                 // Grid & Axes
-                var axesHelper = new THREE.AxesHelper(50);
+                var axesHelper = new THREE.AxesHelper(1.5);
                 scene.add(axesHelper);
+
+                var gridHelper = new THREE.GridHelper(10, 20, 0x1e293b, 0x0f172a);
+                gridHelper.rotation.x = Math.PI / 2;
+                scene.add(gridHelper);
+
+                // Sample obstacle mesh on startup
+                var sampleGeom = new THREE.BoxGeometry(1.0, 0.4, 0.3);
+                var sampleMat = new THREE.MeshStandardMaterial({
+                    color: 0x64748b,
+                    roughness: 0.35,
+                    metalness: 0.2
+                });
+                obstacleMesh = new THREE.Mesh(sampleGeom, sampleMat);
+                obstacleMesh.position.set(0, 0, 0.15);
+                scene.add(obstacleMesh);
 
                 // Domain box setup (unit cube scaled dynamically)
                 var boxGeom = new THREE.BoxGeometry(1, 1, 1);
@@ -759,16 +1249,27 @@ HTML_PAGE = """<!DOCTYPE html>
                     roughness: 0.2
                 });
                 domainBoxMesh = new THREE.Mesh(boxGeom, boxMat);
-                domainBoxMesh.visible = false;
+                domainBoxMesh.visible = true;
                 scene.add(domainBoxMesh);
 
                 var edgesGeom = new THREE.EdgesGeometry(boxGeom);
                 var edgesMat = new THREE.LineBasicMaterial({ color: 0x38bdf8, linewidth: 2 });
                 domainEdgesMesh = new THREE.LineSegments(edgesGeom, edgesMat);
-                domainEdgesMesh.visible = false;
+                domainEdgesMesh.visible = true;
                 scene.add(domainEdgesMesh);
 
                 stlLoader = new THREE.STLLoader();
+
+                // Setup initial stats and sliders
+                if (statLx !== null && statLx !== undefined) statLx.textContent = "1.00";
+                if (statLy !== null && statLy !== undefined) statLy.textContent = "0.40";
+                if (statLz !== null && statLz !== undefined) statLz.textContent = "0.30";
+                if (statChar !== null && statChar !== undefined) statChar.textContent = "1.00";
+
+                initSampleSliders();
+                syncAllChips();
+                updateDomainBox();
+                fitCameraToBox();
 
                 window.addEventListener('resize', onWindowResize);
                 animate();
@@ -792,6 +1293,51 @@ HTML_PAGE = """<!DOCTYPE html>
                 }
                 if (renderer !== null && renderer !== undefined && scene !== null && scene !== undefined && camera !== null && camera !== undefined) {
                     renderer.render(scene, camera);
+                }
+            }
+
+            var PRESETS = {
+                standard: { mx: 1.0, px: 3.0, my: 1.0, py: 1.0, mz: 0.2, pz: 1.5 },
+                automotive: { mx: 2.0, px: 5.0, my: 2.0, py: 2.0, mz: 0.05, pz: 3.0 },
+                aero: { mx: 3.0, px: 6.0, my: 3.0, py: 3.0, mz: 3.0, pz: 3.0 },
+                longwake: { mx: 1.0, px: 8.0, my: 1.5, py: 1.5, mz: 0.2, pz: 2.0 }
+            };
+
+            function getRefDimensions() {
+                if (state.extents === null || state.extents === undefined) return { rx: 1.0, ry: 1.0, rz: 1.0 };
+                var lx = state.extents[0], ly = state.extents[1], lz = state.extents[2];
+                var charLen = Math.max(lx, ly, lz) || 1.0;
+                return {
+                    rx: lx > 0 ? lx : charLen,
+                    ry: ly > 0 ? ly : charLen,
+                    rz: lz > 0 ? lz : charLen
+                };
+            }
+
+            function updateDiagnostics(mx, px, my, py, mz, pz, bxMin, bxMax, byMin, byMax, bzMin, bzMax) {
+                if (statDomainSize !== null && statDomainSize !== undefined) {
+                    var domLx = (bxMax - bxMin) + mx + px;
+                    var domLy = (byMax - byMin) + my + py;
+                    var domLz = (bzMax - bzMin) + mz + pz;
+                    statDomainSize.textContent = domLx.toFixed(2) + " × " + domLy.toFixed(2) + " × " + domLz.toFixed(2);
+                }
+
+                if (statBlockage !== null && statBlockage !== undefined) {
+                    var obsArea = Math.max(0.0001, (byMax - byMin) * (bzMax - bzMin));
+                    var domLyVal = (byMax - byMin) + my + py;
+                    var domLzVal = (bzMax - bzMin) + mz + pz;
+                    var domArea = Math.max(0.0001, domLyVal * domLzVal);
+                    var blockage = (obsArea / domArea) * 100.0;
+                    statBlockage.textContent = blockage.toFixed(2) + "%";
+
+                    statBlockage.classList.remove('good', 'warn', 'alert');
+                    if (blockage < 3.0) {
+                        statBlockage.classList.add('good');
+                    } else if (blockage <= 5.0) {
+                        statBlockage.classList.add('warn');
+                    } else {
+                        statBlockage.classList.add('alert');
+                    }
                 }
             }
 
@@ -847,13 +1393,7 @@ HTML_PAGE = """<!DOCTYPE html>
                 domainEdgesMesh.scale.set(sizeX, sizeY, sizeZ);
                 domainEdgesMesh.visible = true;
 
-                // Update slider text displays
-                if (valMX !== null && valMX !== undefined && sliderMX !== null) valMX.textContent = sliderMX.value;
-                if (valPX !== null && valPX !== undefined && sliderPX !== null) valPX.textContent = sliderPX.value;
-                if (valMY !== null && valMY !== undefined && sliderMY !== null) valMY.textContent = sliderMY.value;
-                if (valPY !== null && valPY !== undefined && sliderPY !== null) valPY.textContent = sliderPY.value;
-                if (valMZ !== null && valMZ !== undefined && sliderMZ !== null) valMZ.textContent = sliderMZ.value;
-                if (valPZ !== null && valPZ !== undefined && sliderPZ !== null) valPZ.textContent = sliderPZ.value;
+                updateDiagnostics(mx, px, my, py, mz, pz, bxMin, bxMax, byMin, byMax, bzMin, bzMax);
             }
 
             function loadSourceMesh(previewUrl) {
@@ -976,6 +1516,22 @@ HTML_PAGE = """<!DOCTYPE html>
                         }
                     }
 
+                    // Update multiplier inputs
+                    if (multMX !== null && multMX !== undefined) multMX.value = "1.0";
+                    if (multPX !== null && multPX !== undefined) multPX.value = "3.0";
+                    if (multMY !== null && multMY !== undefined) multMY.value = "1.0";
+                    if (multPY !== null && multPY !== undefined) multPY.value = "1.0";
+                    if (multMZ !== null && multMZ !== undefined) multMZ.value = "0.2";
+                    if (multPZ !== null && multPZ !== undefined) multPZ.value = "1.5";
+
+                    for (var q = 0; q < cfdPresetBtns.length; q++) {
+                        cfdPresetBtns[q].classList.remove('active');
+                    }
+                    if (cfdPresetBtns.length > 0) {
+                        cfdPresetBtns[0].classList.add('active');
+                    }
+                    syncAllChips();
+
                     if (btnGenerate !== null && btnGenerate !== undefined) {
                         btnGenerate.disabled = false;
                     }
@@ -1003,13 +1559,230 @@ HTML_PAGE = """<!DOCTYPE html>
                 });
             }
 
-            // Slider events (instant real-time client-side update)
+            function formatMult(val) {
+                if (!isFinite(val) || isNaN(val)) return "1.0";
+                var rounded = Math.round(val * 100) / 100;
+                return rounded % 1 === 0 ? rounded.toFixed(1) : rounded.toString();
+            }
+
+            function setSliderVal(slider, val) {
+                if (slider === null || slider === undefined) return;
+                var num = parseFloat(val);
+                if (isNaN(num)) return;
+                var currentMax = parseFloat(slider.max);
+                if (isNaN(currentMax) || currentMax < num) {
+                    slider.max = (Math.ceil(num * 1.5)).toString();
+                }
+                slider.value = num.toFixed(2);
+            }
+
+            function syncChips(axis, val) {
+                if (axis === null || axis === undefined) return;
+                var targetChips = document.querySelectorAll('.mult-chip[data-axis="' + axis + '"]');
+                for (var i = 0; i < targetChips.length; i++) {
+                    var chip = targetChips[i];
+                    if (chip !== null && chip !== undefined) {
+                        var chipVal = parseFloat(chip.getAttribute('data-val'));
+                        if (!isNaN(chipVal) && Math.abs(chipVal - val) < 0.05) {
+                            chip.classList.add('active');
+                        } else {
+                            chip.classList.remove('active');
+                        }
+                    }
+                }
+            }
+
+            function syncAllChips() {
+                var axes = [
+                    { axis: 'mx', input: multMX },
+                    { axis: 'px', input: multPX },
+                    { axis: 'my', input: multMY },
+                    { axis: 'py', input: multPY },
+                    { axis: 'mz', input: multMZ },
+                    { axis: 'pz', input: multPZ }
+                ];
+                for (var i = 0; i < axes.length; i++) {
+                    var item = axes[i];
+                    if (item.input !== null && item.input !== undefined) {
+                        var v = parseFloat(item.input.value);
+                        if (!isNaN(v)) {
+                            syncChips(item.axis, v);
+                        }
+                    }
+                }
+            }
+
+            function onSliderMoved(e) {
+                var refs = getRefDimensions();
+                if (sliderMX !== null && multMX !== null) multMX.value = formatMult(parseFloat(sliderMX.value) / refs.rx);
+                if (sliderPX !== null && multPX !== null) multPX.value = formatMult(parseFloat(sliderPX.value) / refs.rx);
+                if (sliderMY !== null && multMY !== null) multMY.value = formatMult(parseFloat(sliderMY.value) / refs.ry);
+                if (sliderPY !== null && multPY !== null) multPY.value = formatMult(parseFloat(sliderPY.value) / refs.ry);
+                if (sliderMZ !== null && multMZ !== null) multMZ.value = formatMult(parseFloat(sliderMZ.value) / refs.rz);
+                if (sliderPZ !== null && multPZ !== null) multPZ.value = formatMult(parseFloat(sliderPZ.value) / refs.rz);
+
+                if (checkSymmetricY !== null && checkSymmetricY.checked) {
+                    if (e !== undefined && e !== null && e.target === sliderMY) {
+                        if (sliderPY !== null && sliderMY !== null) sliderPY.value = sliderMY.value;
+                        if (multPY !== null && multMY !== null) multPY.value = multMY.value;
+                    } else if (e !== undefined && e !== null && e.target === sliderPY) {
+                        if (sliderMY !== null && sliderPY !== null) sliderMY.value = sliderPY.value;
+                        if (multMY !== null && multPY !== null) multMY.value = multMY.value;
+                    }
+                }
+
+                syncAllChips();
+
+                for (var k = 0; k < cfdPresetBtns.length; k++) {
+                    cfdPresetBtns[k].classList.remove('active');
+                }
+                updateDomainBox();
+            }
+
+            function onMultiplierInput(axis, inputEl) {
+                if (inputEl === null || inputEl === undefined) return;
+                var val = parseFloat(inputEl.value);
+                if (isNaN(val) || val < 0) return;
+                var refs = getRefDimensions();
+                if (axis === 'mx' && sliderMX !== null) setSliderVal(sliderMX, val * refs.rx);
+                if (axis === 'px' && sliderPX !== null) setSliderVal(sliderPX, val * refs.rx);
+                if (axis === 'my' && sliderMY !== null) {
+                    setSliderVal(sliderMY, val * refs.ry);
+                    if (checkSymmetricY !== null && checkSymmetricY.checked && sliderPY !== null && multPY !== null) {
+                        setSliderVal(sliderPY, val * refs.ry);
+                        multPY.value = inputEl.value;
+                        syncChips('py', val);
+                    }
+                }
+                if (axis === 'py' && sliderPY !== null) {
+                    setSliderVal(sliderPY, val * refs.ry);
+                    if (checkSymmetricY !== null && checkSymmetricY.checked && sliderMY !== null && multMY !== null) {
+                        setSliderVal(sliderMY, val * refs.ry);
+                        multMY.value = inputEl.value;
+                        syncChips('my', val);
+                    }
+                }
+                if (axis === 'mz' && sliderMZ !== null) setSliderVal(sliderMZ, val * refs.rz);
+                if (axis === 'pz' && sliderPZ !== null) setSliderVal(sliderPZ, val * refs.rz);
+
+                syncChips(axis, val);
+
+                for (var k = 0; k < cfdPresetBtns.length; k++) {
+                    cfdPresetBtns[k].classList.remove('active');
+                }
+                updateDomainBox();
+            }
+
+            function applyPreset(presetName) {
+                if (PRESETS[presetName] === undefined) return;
+                var p = PRESETS[presetName];
+                var refs = getRefDimensions();
+
+                if (multMX !== null && multMX !== undefined) multMX.value = formatMult(p.mx);
+                if (multPX !== null && multPX !== undefined) multPX.value = formatMult(p.px);
+                if (multMY !== null && multMY !== undefined) multMY.value = formatMult(p.my);
+                if (multPY !== null && multPY !== undefined) multPY.value = formatMult(p.py);
+                if (multMZ !== null && multMZ !== undefined) multMZ.value = formatMult(p.mz);
+                if (multPZ !== null && multPZ !== undefined) multPZ.value = formatMult(p.pz);
+
+                setSliderVal(sliderMX, p.mx * refs.rx);
+                setSliderVal(sliderPX, p.px * refs.rx);
+                setSliderVal(sliderMY, p.my * refs.ry);
+                setSliderVal(sliderPY, p.py * refs.ry);
+                setSliderVal(sliderMZ, p.mz * refs.rz);
+                setSliderVal(sliderPZ, p.pz * refs.rz);
+
+                syncAllChips();
+                updateDomainBox();
+                fitCameraToBox();
+            }
+
+            // Slider events (instant real-time client-side update with 2-way sync)
             var sliders = [sliderMX, sliderPX, sliderMY, sliderPY, sliderMZ, sliderPZ];
             for (var i = 0; i < sliders.length; i++) {
                 var s = sliders[i];
                 if (s !== null && s !== undefined) {
-                    s.addEventListener('input', updateDomainBox);
+                    s.addEventListener('input', onSliderMoved);
                 }
+            }
+
+            // Multiplier inputs
+            var multInputs = [
+                { el: multMX, axis: 'mx' },
+                { el: multPX, axis: 'px' },
+                { el: multMY, axis: 'my' },
+                { el: multPY, axis: 'py' },
+                { el: multMZ, axis: 'mz' },
+                { el: multPZ, axis: 'pz' }
+            ];
+            for (var mIdx = 0; mIdx < multInputs.length; mIdx++) {
+                (function(item) {
+                    if (item.el !== null && item.el !== undefined) {
+                        item.el.addEventListener('input', function() {
+                            onMultiplierInput(item.axis, item.el);
+                        });
+                    }
+                })(multInputs[mIdx]);
+            }
+
+            // CFD Presets
+            for (var pb = 0; pb < cfdPresetBtns.length; pb++) {
+                cfdPresetBtns[pb].addEventListener('click', function(e) {
+                    var presetName = e.currentTarget.getAttribute('data-preset-name');
+                    if (presetName === null || presetName === undefined) return;
+                    for (var q = 0; q < cfdPresetBtns.length; q++) {
+                        cfdPresetBtns[q].classList.remove('active');
+                    }
+                    e.currentTarget.classList.add('active');
+                    applyPreset(presetName);
+                });
+            }
+
+            // Multiplier Chips
+            for (var cIdx = 0; cIdx < multChips.length; cIdx++) {
+                multChips[cIdx].addEventListener('click', function(e) {
+                    var axis = e.currentTarget.getAttribute('data-axis');
+                    var val = parseFloat(e.currentTarget.getAttribute('data-val'));
+                    if (axis === null || axis === undefined || isNaN(val)) return;
+
+                    var refs = getRefDimensions();
+                    if (axis === 'mx') {
+                        if (multMX !== null) multMX.value = formatMult(val);
+                        setSliderVal(sliderMX, val * refs.rx);
+                    } else if (axis === 'px') {
+                        if (multPX !== null) multPX.value = formatMult(val);
+                        setSliderVal(sliderPX, val * refs.rx);
+                    } else if (axis === 'my') {
+                        if (multMY !== null) multMY.value = formatMult(val);
+                        setSliderVal(sliderMY, val * refs.ry);
+                        if (checkSymmetricY !== null && checkSymmetricY.checked) {
+                            if (multPY !== null) multPY.value = formatMult(val);
+                            setSliderVal(sliderPY, val * refs.ry);
+                            syncChips('py', val);
+                        }
+                    } else if (axis === 'py') {
+                        if (multPY !== null) multPY.value = formatMult(val);
+                        setSliderVal(sliderPY, val * refs.ry);
+                        if (checkSymmetricY !== null && checkSymmetricY.checked) {
+                            if (multMY !== null) multMY.value = formatMult(val);
+                            setSliderVal(sliderMY, val * refs.ry);
+                            syncChips('my', val);
+                        }
+                    } else if (axis === 'mz') {
+                        if (multMZ !== null) multMZ.value = formatMult(val);
+                        setSliderVal(sliderMZ, val * refs.rz);
+                    } else if (axis === 'pz') {
+                        if (multPZ !== null) multPZ.value = formatMult(val);
+                        setSliderVal(sliderPZ, val * refs.rz);
+                    }
+
+                    syncChips(axis, val);
+
+                    for (var k = 0; k < cfdPresetBtns.length; k++) {
+                        cfdPresetBtns[k].classList.remove('active');
+                    }
+                    updateDomainBox();
+                });
             }
 
             // Scaling events
@@ -1092,10 +1865,27 @@ HTML_PAGE = """<!DOCTYPE html>
             if (btnToggleWire !== null && btnToggleWire !== undefined) {
                 btnToggleWire.addEventListener('click', function() {
                     state.wireframeOnly = !state.wireframeOnly;
-                    if (btnToggleWire !== null) {
+                    if (btnToggleWire !== null && btnToggleWire !== undefined) {
                         btnToggleWire.textContent = state.wireframeOnly ? "Show Faces" : "Edges Only";
                     }
                     updateDomainBox();
+                });
+            }
+
+            // Format toggle for STL encoding options
+            if (fmtRadios !== null && fmtRadios !== undefined) {
+                fmtRadios.forEach(function(radio) {
+                    if (radio !== null && radio !== undefined) {
+                        radio.addEventListener('change', function() {
+                            if (stlEncodingRow !== null && stlEncodingRow !== undefined) {
+                                if (radio.value === 'stl' && radio.checked) {
+                                    stlEncodingRow.classList.add('visible');
+                                } else if (radio.value !== 'stl' && radio.checked) {
+                                    stlEncodingRow.classList.remove('visible');
+                                }
+                            }
+                        });
+                    }
                 });
             }
 
@@ -1109,6 +1899,11 @@ HTML_PAGE = """<!DOCTYPE html>
 
                     var fmtRadio = document.querySelector('input[name="fmt"]:checked');
                     var outputFmt = (fmtRadio !== null && fmtRadio !== undefined) ? fmtRadio.value : 'vtp';
+                    var stlEncodingRadio = document.querySelector('input[name="stl-encoding"]:checked');
+                    var isBinary = true;
+                    if (outputFmt === 'stl' && stlEncodingRadio !== null && stlEncodingRadio !== undefined) {
+                        isBinary = (stlEncodingRadio.value !== 'ascii');
+                    }
                     var subtractVal = (checkSubtract !== null && checkSubtract !== undefined) ? checkSubtract.checked : false;
 
                     var srcScale = (state.scaleTarget === 'domain') ? 1.0 : state.scaleFactor;
@@ -1126,6 +1921,7 @@ HTML_PAGE = """<!DOCTYPE html>
                         ],
                         subtract: subtractVal,
                         format: outputFmt,
+                        binary: isBinary,
                         source_scale: srcScale,
                         domain_scale: domScale
                     };
@@ -1152,7 +1948,8 @@ HTML_PAGE = """<!DOCTYPE html>
                         if (btnDownload !== null && btnDownload !== undefined && data.download_url !== undefined && data.download_url !== null) {
                             btnDownload.href = data.download_url;
                             btnDownload.classList.add('visible');
-                            btnDownload.textContent = "Download fluid_domain." + outputFmt;
+                            var encodingLabel = (outputFmt === 'stl') ? (isBinary ? " (Binary)" : " (ASCII)") : "";
+                            btnDownload.textContent = "Download fluid_domain." + outputFmt + encodingLabel;
                         }
                     })
                     .catch(function(err) {
@@ -1163,6 +1960,94 @@ HTML_PAGE = """<!DOCTYPE html>
                             reportOutput.textContent = "Generation failed: " + err.message;
                         }
                     });
+                });
+            }
+
+            // Resizable Sidebar and Overlay Controls
+            if (btnCollapseSidebar !== null && btnCollapseSidebar !== undefined && controlsPanel !== null && controlsPanel !== undefined) {
+                btnCollapseSidebar.addEventListener('click', function() {
+                    controlsPanel.classList.add('collapsed');
+                    if (btnShowSidebar !== null && btnShowSidebar !== undefined) {
+                        btnShowSidebar.classList.add('visible');
+                    }
+                });
+            }
+
+            if (btnShowSidebar !== null && btnShowSidebar !== undefined && controlsPanel !== null && controlsPanel !== undefined) {
+                btnShowSidebar.addEventListener('click', function() {
+                    controlsPanel.classList.remove('collapsed');
+                    btnShowSidebar.classList.remove('visible');
+                });
+            }
+
+            if (controlsPanel !== null && controlsPanel !== undefined) {
+                controlsPanel.addEventListener('wheel', function(e) {
+                    if (e !== null && e !== undefined) {
+                        e.stopPropagation();
+                    }
+                }, { passive: true });
+            }
+
+            if (panelResizer !== null && panelResizer !== undefined && controlsPanel !== null && controlsPanel !== undefined) {
+                var isResizing = false;
+                var startX = 0;
+                var startWidth = 460;
+
+                panelResizer.addEventListener('mousedown', function(e) {
+                    if (e === null || e === undefined) return;
+                    isResizing = true;
+                    startX = e.clientX;
+                    startWidth = controlsPanel.getBoundingClientRect().width;
+                    if (document.body !== null && document.body !== undefined) {
+                        document.body.classList.add('resizing');
+                    }
+                    e.preventDefault();
+                });
+
+                window.addEventListener('mousemove', function(e) {
+                    if (!isResizing || e === null || e === undefined) return;
+                    var diff = e.clientX - startX;
+                    var maxAllowed = (typeof window !== 'undefined' && window.innerWidth) ? (window.innerWidth - 60) : 1000;
+                    var newWidth = Math.max(340, Math.min(maxAllowed, startWidth + diff));
+                    if (document.documentElement !== null && document.documentElement !== undefined && document.documentElement.style !== undefined) {
+                        document.documentElement.style.setProperty('--sidebar-width', newWidth + 'px');
+                    }
+                    e.preventDefault();
+                });
+
+                window.addEventListener('mouseup', function() {
+                    if (isResizing) {
+                        isResizing = false;
+                        if (document.body !== null && document.body !== undefined) {
+                            document.body.classList.remove('resizing');
+                        }
+                        onWindowResize();
+                    }
+                });
+
+                panelResizer.addEventListener('touchstart', function(e) {
+                    if (e !== null && e !== undefined && e.touches !== null && e.touches !== undefined && e.touches.length > 0) {
+                        isResizing = true;
+                        startX = e.touches[0].clientX;
+                        startWidth = controlsPanel.getBoundingClientRect().width;
+                    }
+                }, { passive: true });
+
+                window.addEventListener('touchmove', function(e) {
+                    if (!isResizing || e === null || e === undefined || e.touches === null || e.touches === undefined || e.touches.length === 0) return;
+                    var diff = e.touches[0].clientX - startX;
+                    var maxAllowed = (typeof window !== 'undefined' && window.innerWidth) ? (window.innerWidth - 60) : 1000;
+                    var newWidth = Math.max(340, Math.min(maxAllowed, startWidth + diff));
+                    if (document.documentElement !== null && document.documentElement !== undefined && document.documentElement.style !== undefined) {
+                        document.documentElement.style.setProperty('--sidebar-width', newWidth + 'px');
+                    }
+                }, { passive: true });
+
+                window.addEventListener('touchend', function() {
+                    if (isResizing) {
+                        isResizing = false;
+                        onWindowResize();
+                    }
                 });
             }
 
@@ -1186,6 +2071,7 @@ def build(
     output_format: str = "vtp",
     source_scale: float = 1.0,
     domain_scale: float = 1.0,
+    binary: bool = True,
 ) -> tuple[str, str, str]:
     """Compatibility entry point for tests and headless automation."""
     if not input_file:
@@ -1198,7 +2084,7 @@ def build(
         domain_scale=float(domain_scale),
     )
     directory = Path(tempfile.mkdtemp(prefix="domainwrap-"))
-    output = save_domain(result.mesh, directory / f"fluid_domain.{output_format}")
+    output = save_domain(result.mesh, directory / f"fluid_domain.{output_format}", binary=binary)
     preview = save_domain(result.mesh, directory / "preview.stl")
     report = (
         f"Source bounds: {result.source_bounds}\n"
@@ -1220,6 +2106,13 @@ class DomainWrapHandler(BaseHTTPRequestHandler):
             self.send_header("Content-Type", "text/html; charset=utf-8")
             self.end_headers()
             self.wfile.write(HTML_PAGE.encode("utf-8"))
+            return
+
+        if path in ("/favicon.ico", "/favicon.svg"):
+            self.send_response(HTTPStatus.OK)
+            self.send_header("Content-Type", "image/svg+xml")
+            self.end_headers()
+            self.wfile.write(FAVICON_SVG.encode("utf-8"))
             return
 
         if path.startswith("/api/preview/"):
@@ -1314,6 +2207,7 @@ class DomainWrapHandler(BaseHTTPRequestHandler):
                 )
                 subtract = bool(data.get("subtract", False))
                 output_fmt = data.get("format", "vtp").lower()
+                binary = bool(data.get("binary", True))
                 source_scale = float(data.get("source_scale", 1.0))
                 domain_scale = float(data.get("domain_scale", 1.0))
 
@@ -1327,7 +2221,7 @@ class DomainWrapHandler(BaseHTTPRequestHandler):
 
                 gen_dir = Path(tempfile.mkdtemp(prefix="domainwrap-gen-", dir=self.server.temp_dir))
                 out_filename = f"fluid_domain.{output_fmt}"
-                output_file = save_domain(result.mesh, gen_dir / out_filename)
+                output_file = save_domain(result.mesh, gen_dir / out_filename, binary=binary)
                 preview_file = save_domain(result.mesh, gen_dir / "preview.stl")
 
                 dl_id = f"dl_{gen_dir.name}"

@@ -18,6 +18,7 @@ def main() -> None:
     parser.add_argument("--scale", type=float, default=1.0, help="Uniform scale for both source geometry and domain")
     parser.add_argument("--source-scale", type=float, default=None, help="Scale for source geometry only")
     parser.add_argument("--domain-scale", type=float, default=None, help="Scale for domain margins only")
+    parser.add_argument("--ascii", action="store_true", help="Save STL in ASCII format (default: binary)")
     args = parser.parse_args()
     source_scale = args.source_scale if args.source_scale is not None else args.scale
     domain_scale = args.domain_scale if args.domain_scale is not None else args.scale
@@ -29,7 +30,7 @@ def main() -> None:
             source_scale=source_scale,
             domain_scale=domain_scale,
         )
-        path = save_domain(result.mesh, args.output)
+        path = save_domain(result.mesh, args.output, binary=not args.ascii)
     except (ValueError, RuntimeError, OSError) as exc:
         parser.exit(2, f"domainwrap: {exc}\n")
     print(json.dumps({"output": str(path), "source_bounds": result.source_bounds,

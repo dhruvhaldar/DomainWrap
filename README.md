@@ -45,22 +45,24 @@ Open `http://127.0.0.1:7860` in your web browser.
 ### Web Interface Workflow
 
 1. **Upload Surface:** Drag and drop or browse for an `.stl` or `.vtp` geometry file.
-2. **Automatic Relative Offsets:** DomainWrap immediately computes the model's bounding box and characteristic extents $(L_x, L_y, L_z)$, calibrating default boundary sliders proportionally:
-   - **−X (Inlet):** $1.0 \times L_x$
-   - **+X (Wake/Outlet):** $3.0 \times L_x$
-   - **−Y / +Y (Sides):** $1.0 \times L_y$
-   - **−Z (Ground clearance):** $0.2 \times L_z$
-   - **+Z (Top/Ceiling):** $1.5 \times L_z$
-3. **Scaling:**
+2. **CFD Presets & Multipliers:**
+   - Quick domain presets: **Standard** (3× wake), **Automotive** (5× wake, low ground clearance), **Aerospace** (6× wake, free-stream all sides), **Long Wake** (8× wake).
+   - **Wake Multiplier Control:** Directly set the wake length using the multiplier input or quick chips (**3×**, **5×**, **8×**, **10×**) &mdash; the $+X$ offset updates instantly.
+   - **Inlet & Side Multipliers:** Dedicated multiplier inputs for $-X$, $\pm Y$ with a **Symmetric ±Y** toggle.
+   - **Ground & Ceiling Multipliers:** Set $-Z$ ground clearance (e.g. `0×` for ground contact or `0.2×`) and $+Z$ top clearance.
+3. **CFD Diagnostics:**
+   - Live **Domain Size** ($L_x \times L_y \times L_z$).
+   - Live **Frontal Blockage Ratio** ($\%$ frontal obstacle area / domain cross-section) with color-coded status badges ($<3\%$ recommended for minimal wall interference).
+4. **Scaling:**
    - Choose target: **Both** (geometry + domain), **Source** only, or **Domain** only.
    - Set a custom factor or use quick presets (`mm → m: 0.001`, `m → mm: 1000`, `1.0`).
-4. **Interactive 3D Viewport:**
-   - Drag boundary sliders to see the semi-transparent bounding box update in real time.
+5. **Interactive 3D Viewport:**
+   - Drag boundary sliders or multiplier chips to see the semi-transparent bounding box update seamlessly in real time.
    - Orbit, pan, and zoom around the model without visualizer reloads or camera jumping.
    - Toggle **Edges Only** wireframe mode or click **Reset View** as needed.
-5. **Generate & Download:**
+6. **Generate & Download:**
    - Toggle **Subtract model (fluid cavity)** if you require an inner fluid cavity.
-   - Select output format (**VTP** or **STL**).
+   - Select output format (**VTP** or **STL**). When **STL** is selected, choose between **Binary** (compact, recommended for CFD meshing) and **ASCII** (human-readable text).
    - Click **Generate Domain**, inspect the calculated bounding coordinates and warnings, and click **Download Domain**.
 
 ---
@@ -86,6 +88,7 @@ uv run python -m domainwrap.cli --input <INPUT_FILE> --output <OUTPUT_FILE> --ma
 | `--scale` | Float (default: `1.0`) | Uniform scale factor applied to both source geometry and domain. |
 | `--source-scale` | Float (optional) | Scale factor applied strictly to source geometry coordinates. |
 | `--domain-scale` | Float (optional) | Scale factor applied strictly to domain boundary margins. |
+| `--ascii` | Flag (optional) | Save STL in ASCII format (default: binary). |
 
 ### CLI Examples
 
@@ -143,8 +146,8 @@ result = generate_domain(
     domain_scale=1.0,
 )
 
-# 3. Save domain mesh
-output_path = save_domain(result.mesh, "fluid_domain.vtp")
+# 3. Save domain mesh (supports VTP and binary/ASCII STL)
+output_path = save_domain(result.mesh, "fluid_domain.stl", binary=True)  # set binary=False for ASCII STL
 print(f"Saved domain to {output_path}")
 print(f"Domain Bounds: {result.domain_bounds}")
 ```
